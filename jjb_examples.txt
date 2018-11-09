@@ -1,0 +1,460 @@
+# this is a fiel with various usefull examples i have used in the past
+
+
+- project:
+    name: 'project_name'
+    jobs:
+        - 'job-name-with-{stream}'
+    stream:
+      - product_release_version:
+          git-branch-prefix: 'any_prefix_if_needed'
+
+
+#MAVEN JOB TEMPLATE
+- job-template:
+    name: 'job-name-with-{stream}'
+    description: 'Job for {stream} stream'
+    project-type: maven
+    git-project: 'distribution'
+    git-branch: 'master'
+    node: 'dynamic_verify'   #jenkins node labe ... manual configuration on jenkins
+    jdk: 'JDK8-cert'
+    concurrent: true
+    disabled: false
+    settings_file: 'SETTINGS_XML_HARDCODED_CREDENTIALS'
+    user_id: '262d25c0-41e1-494a-a0a6-1128899026b4'
+    file_id: '6445f30f-7f89-4646-a45b-b0c48f646f07'
+
+    properties:
+      - build-discarder:
+          days-to-keep: 28
+          num-to-keep: 10
+
+    scm:
+      - git:
+          url: 'ssh://jenkins@gerrit_url_or_ip:29418/{git-project}.git'
+          credentials-id: '{user_id}'   #dev jenkins
+          refspec: 'refs/changes/*:refs/changes/*'
+          name: ''
+          branches:
+            - '{git-branch}'
+          wipe-workspace: true
+          skip-tag: true
+
+    wrappers:
+      - timeout:
+          timeout: 15
+          fail: true
+          type: absolute
+      - ssh-agent-credentials:
+          users:
+            - '{user_id}'
+      - config-file-provider:
+          files:
+            - file-id: '{file_id}'
+              variable: '{settings_file}'
+
+    maven:
+      root-pom: 'distribution-karaf/pom.xml'
+      goals: 'clean install -DskipTests -Dcheckstyle.skip -Dmaven.javadoc.skip=true -Djacoco.skip'
+      settings: '${settings_file}'
+      automatic-archiving: false
+      automatic-site-archiving: false
+      automatic-fingerprinting: false
+      disable-downstream: true
+
+    publishers:
+      - archive:
+          artifacts: 'neede_path/target/*.zip'
+          only-if-success: true
+          fingerprint: true
+
+
+
+# FREESTILE JOB TEMPLATE
+
+- job-template:
+    name: 'distribution-multipatch-snapshot-{stream}'
+    description: 'Distribution multipatch project for {stream} stream'
+    project-type: freestyle
+    #node: 'dynamic_verify'
+    node: 'master_node'
+    jdk: 'JDK8-cert'
+    concurrent: true
+    disabled: false
+    settings_file: 'SETTINGS_XML_HARDCODED_CREDENTIALS'
+    #user_id: '262d25c0-41e1-494a-a0a6-1128899026b4'   # for dev jenkins_url_or_ip
+    #file_id: '6445f30f-7f89-4646-a45b-b0c48f646f07'
+    user_id: '27830b8f-c30f-4edd-b257-01bf75184a5f'    # for test jenkins-test_url_or_ip
+    file_id: '803d35cd-2e32-4be7-9187-b5f12694aae1'
+
+    properties:
+      - build-discarder:
+          days-to-keep: 28
+          num-to-keep: 7
+
+    parameters:
+      - string:
+            name: PATCH_REFS
+            default: ''
+            description: 'Space separated list of project:gerrit_ref values without spaces, e.g. cli-units:8/8948/2 uniconfig:9/8977/3. Order dependent.'
+
+    wrappers:
+      - workspace-cleanup
+      - timeout:
+          timeout: 15
+          fail: true
+          type: absolute
+      - ssh-agent-credentials:
+          users:
+            - '{user_id}'
+      - config-file-provider:
+          files:
+            - file-id: '{file_id}'
+              variable: '{settings_file}'
+
+    builders:
+      - shell: |
+          if [ "$PATCH_REFS" = "" ]; then
+            echo "Use https://jenkins_url_or_ip/job/distribution-karaf-snapshot-carbon-development/ to get the distribution"
+            exit 1
+          fi
+
+          export JAVA_HOME=/etc/alternatives/java_sdk
+          #export PATH=$PATH:/usr/local/maven/bin
+          #ls -la /usr/local/apache-maven-3.5.2
+          #ls -la /usr/local/apache-maven-3.5.2/bin
+          #cat /usr/local/apache-maven-3.5.2/bin/m2.conf
+          export M2_HOME=/usr/local/maven
+          export M2=$M2_HOME/bin
+          export PATH=$M2:$PATH
+
+          ls $WORKSPACE
+          mvn_local_repo="$WORKSPACE/.m2"
+          mkdir -p $mvn_local_repo
+          cp $SETTINGS_XML_HARDCODED_CREDENTIALS $mvn_local_repo/settings.xml
+
+          for build_item in $PATCH_REFS
+          do
+            cd $WORKSPACE
+            build_item_splitted=( `echo $build_item | tr ":" " "` )
+            git_project=${{build_item_splitted[0]}}
+            revision=${{build_item_splitted[1]}}
+            echo "Going to build project $git_project with revision $revision"
+            git clone ssh://jenkins@gerrit_url_or_ip:29418/$git_project $WORKSPACE/$git_project
+            cd $WORKSPACE/$git_project
+            git fetch ssh://jenkins@gerrit_url_or_ip:29418/$git_project refs/changes/$revision && git checkout FETCH_HEAD
+            #if the project is distribution itself, do check it out, but do not build, let's do it at the end
+            if [ "$git_project" != "distribution" ]; then
+              echo "Building project $git_project"
+              mvn clean install -s $mvn_local_repo/settings.xml -Dmaven.repo.local=$mvn_local_repo -DskipTests -Dcheckstyle.skip=true -Dmaven.javadoc.skip=true
+            else
+              echo "Project $git_project will be built at the end"
+            fi
+          done
+
+          #checkout distribution if not done yet
+          git_project="distribution"
+          cd $WORKSPACE
+          if [ ! -d "$WORKSPACE/$git_project" ]; then
+            git clone ssh://jenkins@gerrit_url_or_ip:29418/$git_project $WORKSPACE/$git_project
+            cd $WORKSPACE/$git_project
+            git checkout {git-branch}
+            git log -n 1
+          fi
+
+          echo "Building project $git_project"
+          cd $WORKSPACE/$git_project
+          mvn clean install -s $mvn_local_repo/settings.xml -f distribution-karaf/pom.xml -Dmaven.repo.local=$mvn_local_repo -DskipTests -Dcheckstyle.skip=true -Dmaven.javadoc.skip=true
+
+    publishers:
+      - archive:
+          artifacts: 'distribution/distribution-karaf/target/*.zip'
+          only-if-success: true
+          fingerprint: true
+      - workspace-cleanup
+
+
+
+
+# OTHER JOB PRAMETERS
+
+    stream: #project param
+      #- master
+      - carbon-development:
+          bpattern: '**/carbon/development'
+
+    properties:
+      - build-discarder:
+          days-to-keep: 14
+          num-to-keep: 10
+
+    parameters:
+      - string:
+            name: DISTRO_URL
+            default: ''
+            description: 'Url where the zip can be downloaded from'
+          downstream-jobs-stream: 'carbon'
+
+   
+    scm:
+      - git:
+          url: 'ssh://jenkins@gerrit_url_or_ip:29418/{git-project}.git'
+          credentials-id: '{user_id}'   #dev jenkins
+          refspec: 'refs/changes/*:refs/changes/*'
+          name: ''
+          branches:
+            - '{git-branch-prefix}/{git-branch-sufix}'
+          wipe-workspace: true
+          skip-tag: true
+
+    scm:
+      - git:
+          url: 'ssh://jenkins@gerriturl_or_ip:29418/{project}.git'
+          credentials-id: '{user_id}'   #dev jenkins
+          refspec: ''
+          name: 'origin'
+          branches:
+            - 'origin/$GERRIT_BRANCH'
+          wipe-workspace: true
+          skip-tag: true
+          choosing-strategy: 'default'
+
+    triggers:
+      - reverse:
+          jobs: '{triggered-by}'
+          result: 'unstable'
+
+    triggers:
+      - gerrit:
+          server-name: 'gerriturl_or_ip'
+          trigger-on:
+            - change-merged-event
+            - comment-added-contains-event:
+                comment-contains-value: 'remerge'
+          projects:
+            - project-compare-type: 'ANT'
+              project-pattern: '{project}'
+              branches:
+                - branch-compare-type: 'ANT'
+                  branch-pattern: '{bpattern}'
+
+    triggers:
+      - gerrit:
+          server-name: 'gerriturl_or_ip'
+          trigger-on:
+            - patchset-created-event:
+                exclude-drafts: true
+                exclude-trivial-rebase: false
+                exclude-no-code-change: true
+            - comment-added-contains-event:
+                comment-contains-value: 'recheck'
+            - comment-added-contains-event:
+                comment-contains-value: 'reverify'
+            - draft-published-event
+          projects:
+            - project-compare-type: 'ANT'
+              project-pattern: '{project}'
+              branches:
+                - branch-compare-type: 'ANT'
+                  branch-pattern: '{bpattern}'
+              file-paths:
+                - compare-type: 'ANT'
+                  pattern: '**'
+    triggers:
+      - pollurl:
+          cron: 'H/3 * * * *'
+          polling-node: '{node}'
+          urls:
+            - url: 'https://jenkins_url_or_ip/job/distribution-karaf-snapshot-{stream}/lastSuccessfulBuild/buildNumber'
+              proxy: false
+              timeout: 3
+              username: 'change_manually_after_job_creation'
+              password: 'change_manually_after_job_creation'
+              check-content:
+                - simple: true
+
+    wrappers:
+      - workspace-cleanup
+      - timeout:
+          timeout: 15
+          fail: true
+          type: absolute
+      - ssh-agent-credentials:
+          users:
+            - '{user_id}'
+      - config-file-provider:
+          files:
+            - file-id: '{file_id}'
+              variable: '{settings_file}'
+      - config-file-provider:
+          files:
+            - file-id: '{client_crt_file_id}'
+              variable: '{client_crt_file_var}'
+            - file-id: '{client_key_file_id}'
+              variable: '{client_key_file_var}'
+            - file-id: '{ca_crt_file_id}'
+              variable: '{ca_crt_file_var}'
+            - file-id: '{client_conf_file_id}'
+              variable: '{client_conf_file_var}'
+      - credentials-binding:
+          - username-password-separated:
+              credential-id: '{jenkins_id}'
+              username: JEUSER
+              password: JEPASSWD
+
+
+
+    builders:
+      - trigger-builds:
+          - project: 'postman-1node-xr5-{distro}-unified-{stream},postman-1node-xr5-{distro}-uniconfig-{stream},postman-1node-classic152-{distro}-unified-{stream},postman-1node-xr6-{distro}-unified-{stream},postman-1node-xe-{distro}-unified-{stream},postman-1node-xe-{distro}-uniconfig-{stream}'
+            current-parameters: True
+            block: True
+#            block-thresholds:
+#              - build-step-failure-threshold: 'never'
+#              - unstable-threshold: 'UNSTABLE'
+#              - failure-threshold: 'FAILURE' 
+
+   builders:
+      - shell: |
+          last_run=`curl --user $JEUSER:$JEPASSWD https://jenkins_url_or_ip/job/distribution-karaf-snapshot-carbon/lastSuccessfulBuild/buildNumber`
+          curl --user $JEUSER:$JEPASSWD https://jenkins_url_or_ip/job/distribution-karaf-snapshot-carbon/$last_run/artifact/*zip*/archive.zip -o archive.zip
+          unzip -q archive.zip
+          zip_path=`cd archive; find distribution-karaf/ -type f`
+          echo "$last_run" > $WORKSPACE/last_snapshot_build
+          echo "https://jenkins_url_or_ip/job/distribution-karaf-snapshot-carbon/$last_run/artifact/$zip_path" > $WORKSPACE/last_snapshot_path
+          DISTRO_URL="https://jenkins_url_or_ip/job/distribution-karaf-snapshot-carbon/$last_run/artifact/$zip_path"
+          echo "DISTRO_URL=$DISTRO_URL" > $WORKSPACE/durl.property
+      - inject:
+          properties-file: $WORKSPACE/durl.property
+
+    builders:
+      - shell: |
+          # checkout scripts-repo, we need ansible scripts
+          git_project="scripts-repo"
+          cd $WORKSPACE
+          if [ ! -d "$WORKSPACE/$git_project" ]; then
+            git clone ssh://jenkins@gerriturl_or_ip:29418/$git_project $WORKSPACE/$git_project
+            cd $WORKSPACE/$git_project
+            git checkout {scripts-repo-branch}
+            git log -n 1
+          fi
+          # ls -la $WORKSPACE/scripts-repo
+          # ls -la $WORKSPACE/scripts-repo/ansible
+      - shell: |
+          echo "Set up python virtual env..."
+          ROBOT_VENV=$WORKSPACE/testing_virtenv
+          mkdir $ROBOT_VENV
+          echo "ROBOT_VENV=$ROBOT_VENV" > $WORKSPACE/env.properties
+
+          # The --system-site-packages parameter allows us to pick up system level
+          # installed packages. 
+          virtualenv --system-site-packages ${{ROBOT_VENV}}
+          source ${{ROBOT_VENV}}/bin/activate
+          set -exu
+          pip install --upgrade pip
+          pip install --upgrade setuptools
+          pip install ansible
+          pip install redis
+          pip install pyvmomi
+          pip install pysphere
+          pip install -r $WORKSPACE/scripts-repo/tools/tools_vm/python_req.txt
+
+          chmod 600 $WORKSPACE/scripts-repo/releng/sshkeysforlab/vagrant
+          chmod 600 $WORKSPACE/scripts-repo/releng/sshkeysforlab/.ssh/id_rsa
+      - shell: |
+          if [[ "$DISTRO_URL" = *"jenkins"* ]]; then
+            curl --user $JEUSER:$JEPASSWD $DISTRO_URL -o $WORKSPACE/{downloaded-distro-file}
+          elif [[ "$DISTRO_URL" = *"artifactory"* ]]; then
+            curl --user $AUSER:$APASSWD $DISTRO_URL -o $WORKSPACE/{downloaded-distro-file}
+          else
+            curl $DISTRO_URL -o ${{WORKSPACE}}/{downloaded-distro-file}
+          fi
+      - inject:
+          properties-file: env.properties
+
+    publishers:
+      - postbuildscript:
+          builders:
+            - build-steps:
+                - shell: |
+                    docker images
+                    docker save -o {exported-image-file} {image-name}
+      - archive:
+          artifacts: '{exported-image-file}'
+          only-if-success: true
+          fingerprint: true
+      - workspace-cleanup
+
+    publishers:
+      - trigger:
+          project: 'distribution-karaf-snapshot-{downstream-jobs-stream}'
+          threshold: SUCCESS
+
+     - trigger-parameterized-builds:
+        - project:
+            - multitest-postman-1node-karaf-snapshot-{stream}
+          predefined-parameters: 'DISTRO_URL=$DISTRO_URL'
+
+      - conditional-publisher:
+          - condition-kind: regexp
+            on-evaluation-failure: dont-run
+            condition-expression: '3.*'
+            condition-searchtext: '$DISTRO'
+            action: 
+                - trigger-parameterized-builds:
+                   - project: 'multitest-postman-1node-autorelease-{autorelease-type}-carbon, postman-scale-1node-iou-autorelease-{autorelease-type}-carbon'
+                     predefined-parameters: |
+                       DISTRO_URL=$DISTRO_URL
+
+    publishers:
+      - archive:
+          artifacts: '*html,*karaf.log.gz,*xml,junit_results/*xml'
+          fingerprint: true
+          allow-empty: true
+      - junit:
+          results: 'junit_results/*xml'
+          allow-empty-results: true
+          test-stability: false
+          junit-attachments: false
+      - postbuildscript:
+          builders:
+            - build-steps:
+                - shell: |
+                    source $ROBOT_VENV/bin/activate
+                    echo '## DESTROY THE VMs  ##'
+                    count=1
+                    for i in `seq 1 {nr_nodes}`;
+                    do
+                      varname_guestname=GUESTNAME$count
+                      echo "Destroying vm ${{!varname_guestname}}"
+                      ansible-playbook $WORKSPACE/scripts-repo/releng/ansible/destroy_vm.yml --extra-vars "guestname=${{!varname_guestname}}"
+                      (( count++ ))
+                    done
+              build-on: 
+                  - SUCCESS
+                  - UNSTABLE
+                  - FAILURE
+                  - NOT_BUILT
+                  - ABORTED
+      - workspace-cleanup
+
+
+      - plot:
+          - title: 'Mounted devices'
+            group: 'ScaleTestingGroup'
+            yaxis: 'Devices'
+            csv-file-name: 'scale-{nr_nodes}node-{device}-{distro}-{stream}.csv'
+            keep-records: true
+            series:
+              - file: 'mounted_devices.csv'
+                format: 'csv'
+                display-table: true
+
+    publishers:
+      - postbuildscript:
+          builders:
+            - build-steps:
+                - shell: |
+                    ./docker-clustering/log-backup.sh {nr_nodes}
+                    ./docker-clustering/gc-log-backup.sh {nr_nodes}
