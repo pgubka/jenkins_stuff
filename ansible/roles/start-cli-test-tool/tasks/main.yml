@@ -1,0 +1,6 @@
+- name: start cli test tool
+  shell:
+      cmd: |
+        source {{ virtual_env_dir }}/bin/activate
+        cd {{ cli_testtool_dir }}
+        nohup python mockdevice.py 127.0.0.1 {{ tool_port_start }} {{tool_port_end }} ssh devices/cisco_IOS.json &

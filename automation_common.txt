@@ -1,0 +1,22 @@
+### SW
+Jenkins 2.60.2 or higher
+
+List of plugins (may not be complete)
+- Ant Plugin
+- Build Timeout Plugin
+- Commit Message Trigger Plugin
+- Config File Provider Plugin
+- Credentials Plugin
+- Docker Plugin (+some others related to docker)
+- Exclusion Plugin
+- Gerrit Trigger
+- Job Configuration History Plugin
+- Robot Framework Plugin
+- Workspace Cleanup Plugin
+
+### Jenkins Job Builder
+In order to create jenkins jobs as defined in testing/jenkins/jobs/jobs.yaml at leaset these python packages are needed.
+
+jenkins-job-builder==1.6.2
+python-jenkins==0.4.12
+

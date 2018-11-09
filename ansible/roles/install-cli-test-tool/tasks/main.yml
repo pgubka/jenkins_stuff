@@ -1,0 +1,16 @@
+- name: user newer pip virtualenv
+  pip:
+      name: pip
+      virtualenv: "{{ virtual_env_dir }}"
+      extra_args: "--upgrade"
+
+- name: install mockssh
+  pip:
+      name: MockSSH==1.4.5
+      virtualenv: "{{ virtual_env_dir }}"
+
+- name: clone cli tool
+  git:
+    repo: 'https://github.com/marosmars/cli-testtool.git'
+    dest: "{{ cli_testtool_dir }}"
+    clone: yes

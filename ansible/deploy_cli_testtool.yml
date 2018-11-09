@@ -1,0 +1,16 @@
+# Desctiption:
+#   This script clones performs starts a cli-testtool for
+#   testing the number of mounted devices
+#
+---
+- hosts: '{{ cli_testtool_node }}'
+  vars:
+    - virtual_env: 'venv'
+    - virtual_env_dir: '/tmp/venv'
+    - cli_testtool_dir: '/tmp/clitool'
+    - tool_port_start: '10000'
+    - tool_port_end: '10010'
+
+  roles:
+    - install-cli-test-tool
+    - start-cli-test-tool
