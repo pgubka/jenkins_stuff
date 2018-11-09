@@ -20,3 +20,19 @@ In order to create jenkins jobs as defined in testing/jenkins/jobs/jobs.yaml at 
 jenkins-job-builder==1.6.2
 python-jenkins==0.4.12
 
+
+
+#!/bin/bash
+
+USERNAME='my_user_name'
+
+git clone ssh://${USERNAME}@gerrit.domain.io:29418/project.git .
+cd project
+scp -p -P 29418 ${ODL_USERNAME}@gerrit.domain.io:hooks/commit-msg .git/hooks/
+chmod 755 .git/hooks/commit-msg
+git checkout some_branch
+git config remote.origin.push HEAD:refs/for/some_branch
+
+git config --local user.name "Peter Gubka"
+git config --local user.email pgubka@bla.bla
+
