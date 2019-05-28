@@ -1,0 +1,67 @@
+
+base_ip = "192.168.54."
+base_prefix_len = 24
+gwnode_name = "gwnode"
+#gwnode_box = "alpine/alpine64"
+gwnode_box ="ubuntu/bionic64"
+gwnode_ip = base_ip + "2"
+
+num_nodes = 3
+node_names = num_nodes.times.collect { |n| "master#{n+1}" }
+node_box = "ubuntu/bionic64"
+node_ips = num_nodes.times.collect { |n| base_ip + "#{n+10}" }
+node_memory = 4096
+
+
+Vagrant.configure("2") do |config|
+
+  # configuring cluster
+  num_nodes.times do |n|
+    node_name = node_names[n]
+    config.vm.define node_name do |node|
+      node.vm.box = node_box
+      #node.disksize.size = "20GB"
+      node.vm.hostname = node_name
+      #node.ssh.username = "protonet"
+      node.vm.provider "virtualbox" do |v|
+        v.memory = node_memory
+        v.customize [ "modifyvm", :id, "--uartmode1", "disconnected" ]
+      end
+      node.vm.network "private_network", ip: node_ips[n], netmask: "#{base_prefix_len}", virtualbox__intnet: "mynetwork"
+      node.vm.provision "shell", privileged: "True", inline: <<-SHELL
+        sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+        service ssh restart
+      SHELL
+      node.vm.provision "shell",
+        run: "always",
+        inline: "route add default gw #{gwnode_ip}"
+      # delete default gw on eth0
+      node.vm.provision "shell",
+        run: "always",
+        inline: "eval `route -n | awk '{ if ($8 ==\"enp0s3\" && $2 != \"0.0.0.0\") print \"route del default gw \" $2; }'`"
+    end
+  end
+
+  #configuring outside node
+  config.vm.define gwnode_name do |gwnode|
+    gwnode.vm.box = gwnode_box
+    gwnode.vm.hostname = gwnode_name
+    gwnode.vm.provider "virtualbox" do |v|
+      v.customize [ "modifyvm", :id, "--uartmode1", "disconnected" ]
+      v.memory = 1024
+      v.cpus = 1
+    end
+    gwnode.vm.network "private_network", ip: gwnode_ip, netmask: "#{base_prefix_len}", virtualbox__intnet: "mynetwork"
+    gwnode.vm.provision "shell", privileged: "True", inline: <<-SHELL
+        sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config    
+        service ssh restart
+      SHELL
+    gwnode.vm.provision "shell" do |s|
+      s.path = "provision_gateway.sh"
+    end
+    gwnode.vm.provision "shell",
+      privileged: "True",
+      inline: "/etc/network/if-pre-up.d/iptables-restore",
+      run: "always"
+  end
+end
