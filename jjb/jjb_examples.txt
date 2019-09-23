@@ -458,3 +458,10 @@
                 - shell: |
                     ./docker-clustering/log-backup.sh {nr_nodes}
                     ./docker-clustering/gc-log-backup.sh {nr_nodes}
+
+
+
+### some general purpose pipes or useful strings
+
+# create enf file of gitlab variables
+env | grep ^gitlab | python -c 'import sys,os; vars = [line.split("=")[0]+"=\""+os.environ.get(line.split("=")[0])+"\"" for line in sys.stdin]; print("\n".join(vars))' > $WORKSPACE/gitlab.properties
