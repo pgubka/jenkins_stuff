@@ -1,0 +1,101 @@
+<?php
+
+// This script should be located e.g. in /var/www/html/ directory
+// and be used as curl <host>/crud.php?method=....
+// Parameters are method, uid, name, surname
+// This should be used for apache2 to create simpe sanity tests
+
+$dbhost = "127.0.0.1";
+$dbuser = "testuser";
+$dbpasswd = "password";
+$dbname = "test";
+$dbtable = "users";
+
+#if (!$connection = pg_connect ("host=$dbhost dbname=$dbname user=$dbuser password=$dbpasswd")) {
+#    $error = error_get_last();
+#    echo "Connection failed. Error was: " .  $error['message'] . "\n";
+#    exit;
+#}
+
+// Create connection
+$conn = new mysqli($dbhost, $dbuser, $dbpasswd, $dbname);
+
+// Check connection
+if ($conn->connect_error) {
+  die("Connection failed: " . $conn->connect_error);
+}
+
+#$uriSegments = explode("?", $_SERVER['REQUEST_URI']);
+#parse_str($uriSegments[1], $params);
+$method = htmlspecialchars($_GET["method"]);
+$name = htmlspecialchars($_GET["name"]);
+$surname = htmlspecialchars($_GET["surname"]);
+$uid = htmlspecialchars($_GET["uid"]);
+
+if ( $method == "create" ) {
+        if ( $name == "" ) {
+                print("Error: Missing parameter 'name' for method $method\n");
+        }
+        if ( $surname == "" ) {
+               print("Error: Missing parameter 'surname' for method $method\n");
+        }
+	$sql = "INSERT INTO $dbtable (name, surname) VALUES ('$name','$surname');";
+        $result = $conn -> query($sql);                                                      
+        if ($result == FALSE) {                                                                      
+                echo "Error: Method $method failed: $sql\n";                                 
+                exit;                                                                        
+        } 
+}
+elseif ( $method == "update" ) {
+        if ( $uid == "" ) {
+                print("Error: Missing parameter 'uid' for method $method\n");
+	}
+        if ( $name == "" ) {
+                print("Error: Missing parameter 'name' for method $method\n");
+        }
+        if ( $surname == "" ) {
+                print("Error: Missing parameter 'surname' for method $method\n");
+        }
+	$sql = "UPDATE $dbtable SET name='$name', surname='$surname' WHERE uid=$uid;";
+        $result = $conn -> query($sql);
+        if ($result == FALSE) {                                                                  
+                echo "Error: Method $method failed: $sql\n";                       
+                exit;                                                              
+        }                                                                          
+}
+elseif ( $method == "read" ) {
+	$sql = "SELECT * FROM  $dbtable;";
+        $result = $conn -> query($sql);
+        if ($result == FALSE) {                                                                  
+                echo "Error: Method $method failed: $sql\n";                       
+                exit;                                                              
+        }                                                                          
+        $arr = $result -> fetch_all(MYSQLI_ASSOC);
+	print_r($arr);
+	foreach ($arr as $row) {
+	    $duid = $row["uid"];
+	    $dname = $row["name"];
+	    $dsurname = $row["surname"];
+	    print("{\"uid\": $duid, \"name\":\"$dname\", \"surname\": \"$dsurname\"}\n");
+        }
+}
+elseif ( $method == "delete" ) {
+	if ( $uid == "" ) {
+		print("Error: Missing parameter 'uid' for method $method\n");
+	}
+	$sql = "DELETE FROM $dbtable WHERE uid='$uid';";
+        $result = $conn -> query($sql);                        
+        if ($result == FALSE) {                                                                  
+                echo "Error: Method $method failed: $sql\n";                                     
+                exit;                                                                            
+        }                                                                                        
+}
+elseif ( $method == "" ) {
+	print("Error: Missing parameter: method, method=[create|update|read|delete]\n");
+}
+else {
+	print("Error: Unsupported method: $method\n");
+}
+
+?>
+

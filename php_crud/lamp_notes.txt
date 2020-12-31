@@ -1,0 +1,74 @@
+x86 - building
+----------
+
+gitprojects/myyocto/build/conf/bblayers.conf
+  /home/jenkins/gitprojects/myyocto/meta-openembedded/meta-webserver \
+  /home/jenkins/gitprojects/myyocto/meta-openembedded/meta-oe \
+  /home/jenkins/gitprojects/myyocto/meta-openembedded/meta-python \
+
+local.conf
+IMAGE_INSTALL_append = " apache2 postgresql openssh-scp openssh-sshd python3"
+IMAGE_INSTALL_remove="glib-2.0"
+EXTRA_IMAGE_FEATURES += "debug-tweaks package-management"
+IMAGE_ROOTFS_EXTRA_SPACE = "5242880"
+
+
+qemu run
+qemu-system-x86_64 -kernel bzImage -nographic -append "root=/dev/hda console=ttyS0" -hda rootfs.ext4 -device e1000,netdev=net0 -netdev user,id=net0,hostfwd=tcp::5555-:22,net=192.168.76.0/24,dhcpstart=192.168.76.9
+
+
+enable interface
+root@qemux86-64:/etc/network# echo "auto eth0" >> interfaces 
+root@qemux86-64:/etc/network# echo "iface eth0 inet dhcp" >> interfaces 
+root@qemux86-64:/etc/network# ifup eth0
+
+
+sshd and apache2 started  .... "wget loalhost" will download indexhtml from /usr/share/apache2/default-site/htdocs/index.html
+
+
+root@qemux86-64:~# postgresql-setup initdb
+Initializing database: test
+ [ OK ] 
+root@qemux86-64:~#
+root@qemux86-64:~# /etc/init.d/postgresql-server start
+Starting postgresql-server service:  [ OK ]
+root@qemux86-64:~# 
+
+root@qemux86-64:~# su - postgres
+postgres@qemux86-64:~$ psql
+psql (12.2)
+Type "help" for help.
+
+postgres=# \dt
+Did not find any relations.
+postgres=# create database test
+postgres-# ;
+CREATE DATABASE
+postgres=# 
+
+
+
+# toto este asi bude treba urobit
+createuser --interactive --pwprompt
+test=# GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO testuser;
+test=# GRANT ALL PRIVILEGES ON TABLE users TO testuser;
+
+test=# CREATE TABLE users (
+    uid SERIAL PRIMARY KEY,
+    name VARCHAR(30) NOT NULL,
+    surname VARCHAR(30) NOT NULL
+  );
+
+
+
+
+
+for MYSQL enable port binding
+$ nano /etc/my.cnf
+#skip-networking
+bind-address                                    = 0.0.0.0
+
+mysql:
+GRANT ALL PRIVILEGES ON *.* TO 'testuser'@'localhost' WITH GRANT OPTION;
+CREATE USER testuser@localhost IDENTIFIED BY 'password';
+
